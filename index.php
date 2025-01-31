@@ -3,33 +3,25 @@ declare(strict_types=1);
 
 require_once 'config.php';
 
-// Inicializar BBBManager con una instancia de MoodleAPI
 try {
-    $moodleApi = new MoodleAPI(MOODLE_URL, MOODLE_TOKEN, MOODLE_REST_FORMAT);
-} catch (Exception $e) {
-    echo '<div class="alert alert-danger">Error al inicializar la API de Moodle: ' . htmlspecialchars($e->getMessage()) . '</div>';
-    exit;
-}
-
-try {
-    $manager = new BBBManager($moodleApi);
+    $manager = new BBBManager(new MoodleAPI(MOODLE_URL, MOODLE_TOKEN));
     $manager->initialize();
-} catch (Exception $e) {
-    echo '<div class="alert alert-danger">Error al inicializar BBBManager: ' . htmlspecialchars($e->getMessage()) . '</div>';
-    exit;
-}
 
-// Obtener los datos procesados
-$data = $manager->getData();
-$courseId = $manager->getCourseId();
-$error = $manager->getError();
-$message = $manager->getMessage();
+    $data = $manager->getData();
+    $courseId = $manager->getCourseId();
+    $error = $manager->getError();
+    $message = $manager->getMessage();
+} catch (Exception $e) {
+    $error = "Error al inicializar la aplicación: " . $e->getMessage();
+    error_log($error);
+}
 ?>
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Gestor de salas BigBlueButton para Moodle">
     <title><?= htmlspecialchars(APP_NAME) ?></title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
@@ -41,7 +33,8 @@ $message = $manager->getMessage();
         <div class="container d-flex justify-content-between align-items-center">
             <a href="?" class="navbar-brand d-flex align-items-center">
                 <i class="bi bi-camera-video-fill me-2"></i>
-                <?= htmlspecialchars(APP_NAME) ?> <small class="ms-2 opacity-75">v<?= htmlspecialchars(APP_VERSION) ?></small>
+                <?= htmlspecialchars(APP_NAME) ?> 
+                <small class="ms-2 opacity-75">v<?= htmlspecialchars(APP_VERSION) ?></small>
             </a>
             <?php if ($courseId && isset($data['courseInfo'])): ?>
                 <div class="d-flex align-items-center gap-3">
@@ -49,17 +42,15 @@ $message = $manager->getMessage();
                         <i class="bi bi-arrow-left me-1"></i>
                         Volver a cursos
                     </a>
-                    <div class="vr bg-white opacity-25 h-100"></div>
-                    <?php
-                        // Obtener 'course_url' desde 'courseInfo' o construirla si no está presente
-                        $courseUrl = isset($data['courseInfo']['course_url']) ? $data['courseInfo']['course_url'] : (isset($data['courseInfo']['siteurl']) ? $data['courseInfo']['siteurl'] . "/course/view.php?id=" . urlencode((string)$courseId) : '#');
-                    ?>
-                    <a href="<?= htmlspecialchars($courseUrl) ?>" 
-                       target="_blank"
-                       class="btn btn-light btn-sm">
-                        <i class="bi bi-box-arrow-up-right me-1"></i>
-                        Ir al curso
-                    </a>
+                    <?php if (isset($data['courseInfo']['url'])): ?>
+                        <div class="vr bg-white opacity-25 h-100"></div>
+                        <a href="<?= htmlspecialchars($data['courseInfo']['url']) ?>" 
+                           target="_blank"
+                           class="btn btn-light btn-sm">
+                            <i class="bi bi-box-arrow-up-right me-1"></i>
+                            Ir al curso
+                        </a>
+                    <?php endif; ?>
                 </div>
             <?php endif; ?>
         </div>
@@ -85,7 +76,9 @@ $message = $manager->getMessage();
                     <i class="bi bi-mortarboard-fill text-primary me-2"></i>
                     <?= htmlspecialchars($data['courseInfo']['fullname']) ?>
                 </h1>
-                <small class="text-muted"><?= htmlspecialchars($data['courseInfo']['shortname']) ?></small>
+                <small class="text-muted">
+                    <?= htmlspecialchars($data['courseInfo']['shortname']) ?>
+                </small>
             </div>
         <?php endif; ?>
 
@@ -119,13 +112,13 @@ $message = $manager->getMessage();
                                             <div class="text-muted small">
                                                 <i class="bi bi-code-slash me-1"></i>
                                                 <?= htmlspecialchars($course['shortname']) ?>
-                                                <?php if (!$course['visible']): ?>
+                                                <?php if (!($course['visible'] ?? true)): ?>
                                                     <span class="badge bg-warning ms-2">Oculto</span>
                                                 <?php endif; ?>
                                             </div>
                                         </div>
                                         <span class="badge bg-primary rounded-pill">
-                                            <?= htmlspecialchars((string)$course['bbb_count']) ?> BBB
+                                            <?= (int)$course['bbb_count'] ?> BBB
                                         </span>
                                     </div>
                                 </div>
@@ -150,24 +143,20 @@ $message = $manager->getMessage();
                             <h2 class="section-title">
                                 <i class="bi bi-folder-fill me-2"></i>
                                 <?= htmlspecialchars($section['name']) ?>
-                                <?php if (!$section['visible']): ?>
+                                <?php if (!($section['visible'] ?? true)): ?>
                                     <span class="badge bg-warning ms-2">Sección oculta</span>
                                 <?php endif; ?>
                             </h2>
                             
-                            <?php
-                                // Decodificar la disponibilidad de la sección si existe
-                                $sectionAvailability = isset($section['availability']) ? json_decode($section['availability'], true) : null;
-                            ?>
-                            <?php if ($manager->hasRestrictions($sectionAvailability)): ?>
+                            <?php if ($manager->hasRestrictions($section['availability'])): ?>
                                 <div class="restrictions-container section-restrictions mt-2">
                                     <div class="restrictions-title">
-                                        <i class="bi bi-lock-fill me-2"></i>
+                                        <i class="bi bi-lock-fill"></i>
                                         Restricciones de la sección
                                     </div>
-                                    <?php foreach ($manager->getFormattedRestrictions($sectionAvailability) as $restriction): ?>
+                                    <?php foreach ($manager->getFormattedRestrictions($section['availability']) as $restriction): ?>
                                         <div class="restriction-item <?= htmlspecialchars($restriction['class']) ?>">
-                                            <i class="bi <?= htmlspecialchars($restriction['icon']) ?> me-2"></i>
+                                            <i class="bi <?= htmlspecialchars($restriction['icon']) ?>"></i>
                                             <?= htmlspecialchars($restriction['text']) ?>
                                         </div>
                                     <?php endforeach; ?>
@@ -184,13 +173,8 @@ $message = $manager->getMessage();
                                                 <div class="d-flex justify-content-between align-items-center">
                                                     <h5 class="card-title mb-0">
                                                         <?= htmlspecialchars($activity['name']) ?>
-                                                        <?php if (!empty($activity['module_info']['description'])): ?>
-                                                            <i class="bi bi-info-circle text-muted ms-2" 
-                                                               title="<?= htmlspecialchars(strip_tags($activity['module_info']['description'])) ?>"
-                                                               aria-label="Descripción de la actividad"></i>
-                                                        <?php endif; ?>
                                                     </h5>
-                                                    <?php if (!$activity['visible']): ?>
+                                                    <?php if (!($activity['module_info']['visible'] ?? true)): ?>
                                                         <span class="badge bg-warning">
                                                             <i class="bi bi-eye-slash me-1"></i>
                                                             Oculto
@@ -198,54 +182,38 @@ $message = $manager->getMessage();
                                                     <?php endif; ?>
                                                 </div>
                                             </div>
-                                            
                                             <div class="card-body d-flex flex-column">
                                                 <?php if (!empty($activity['intro'])): ?>
-                                                    <div class="activity-intro mb-3">
-                                                        <?= nl2br(htmlspecialchars(strip_tags($activity['intro']))) ?>
-                                                    </div>
+                                                    <p class="card-text text-truncate-2 mb-3">
+                                                        <?= htmlspecialchars(strip_tags($activity['intro'])) ?>
+                                                    </p>
                                                 <?php endif; ?>
-    
-                                                <?php 
-                                                    // Decodificar la disponibilidad de la actividad si existe
-                                                    $activityAvailability = isset($activity['availability']) ? json_decode($activity['availability'], true) : null;
-                                                    // Obtener las restricciones formateadas
-                                                    $formattedRestrictions = $manager->getFormattedRestrictions($activityAvailability);
-                                                    if (!empty($formattedRestrictions)): 
-                                                ?>
+
+                                                <?php if ($manager->hasRestrictions($activity['availability'])): ?>
                                                     <div class="restrictions-container activity-restrictions">
                                                         <div class="restrictions-title">
-                                                            <i class="bi bi-shield-lock me-2"></i>
-                                                            Condiciones de acceso
+                                                            <i class="bi bi-lock-fill"></i>
+                                                            Restricciones de acceso
                                                         </div>
-                                                        <?php foreach ($formattedRestrictions as $restriction): ?>
+                                                        <?php foreach ($manager->getFormattedRestrictions($activity['availability']) as $restriction): ?>
                                                             <div class="restriction-item <?= htmlspecialchars($restriction['class']) ?>">
-                                                                <i class="bi <?= htmlspecialchars($restriction['icon']) ?> me-2"></i>
+                                                                <i class="bi <?= htmlspecialchars($restriction['icon']) ?>"></i>
                                                                 <?= htmlspecialchars($restriction['text']) ?>
                                                             </div>
                                                         <?php endforeach; ?>
                                                     </div>
                                                 <?php endif; ?>
-    
-                                                <div class="activity-meta mt-2">
-                                                    <small class="text-muted">
-                                                        <i class="bi bi-clock-history me-1"></i>
-                                                        Creado el: <?= isset($activity['module_info']['added']) ? date('d/m/Y', (int)$activity['module_info']['added']) : 'Desconocida' ?>
-                                                    </small>
-                                                </div>
-    
-                                                <div class="bbb-actions mt-3">
-                                                    <?php
-                                                        // Asegurarse de que 'activity_url' existe y es una cadena
-                                                        $activityUrl = isset($activity['activity_url']) && is_string($activity['activity_url']) ? $activity['activity_url'] : '#';
-                                                    ?>
-                                                    <a href="<?= htmlspecialchars($activityUrl) ?>" 
-                                                       class="btn btn-primary w-100"
-                                                       target="_blank">
-                                                        <i class="bi bi-door-open me-2"></i>
-                                                        Unirse a la sesión
-                                                    </a>
-                                                </div>
+
+                                                <?php if (isset($activity['activity_url'])): ?>
+                                                    <div class="bbb-actions mt-auto">
+                                                        <a href="<?= htmlspecialchars($activity['activity_url']) ?>"
+                                                           target="_blank"
+                                                           class="btn btn-outline-primary w-100">
+                                                            <i class="bi bi-camera-video me-2"></i>
+                                                            Acceder a la sala
+                                                        </a>
+                                                    </div>
+                                                <?php endif; ?>
                                             </div>
                                         </div>
                                     </div>
@@ -255,6 +223,7 @@ $message = $manager->getMessage();
                     </div>
                 <?php endforeach; ?>
             <?php endif; ?>
+        <?php endif; ?>
     </div>
 
     <!-- Scripts -->
@@ -266,7 +235,7 @@ $message = $manager->getMessage();
         tooltipTriggerList.map(function (tooltipTriggerEl) {
             return new bootstrap.Tooltip(tooltipTriggerEl, {
                 placement: 'top',
-                trigger: 'hover focus'
+                trigger: 'hover'
             });
         });
 
