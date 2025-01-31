@@ -1,15 +1,13 @@
 :root {
-    --primary-color: #2563eb;
-    --primary-dark: #1e40af;
-    --secondary-color: #3b82f6;
-    --success-color: #059669;
-    --danger-color: #dc2626;
-    --warning-color: #d97706;
-    --info-color: #2563eb;
-    --text-color: #1f2937;
-    --bg-color: #f8fafc;
-    --card-bg: #ffffff;
-    --border-color: #e2e8f0;
+    --primary-color: #4f46e5; /* Azul índigo */
+    --secondary-color: #10b981; /* Verde */
+    --info-color: #0ea5e9; /* Azul claro */
+    --warning-color: #f59e0b; /* Amarillo */
+    --danger-color: #ef4444; /* Rojo */
+    --text-color: #1f2937; /* Gris oscuro */
+    --bg-color: #f8fafc; /* Blanco grisáceo */
+    --card-bg: #ffffff; /* Blanco */
+    --border-color: #e2e8f0; /* Gris claro */
     
     --navbar-height: 4rem;
     --border-radius: 0.75rem;
@@ -65,7 +63,7 @@ body {
 }
 
 .section-card .card-header {
-    background: linear-gradient(to right, rgba(37, 99, 235, 0.1), transparent);
+    background: linear-gradient(to right, rgba(79, 70, 229, 0.1), transparent);
     border-bottom: none;
     padding: 1rem 1.5rem;
 }
@@ -97,12 +95,24 @@ body {
     padding: 1rem;
 }
 
-/* Restrictions */
+/* Restricciones Mejoradas */
 .restrictions-container {
-    background-color: rgba(243, 244, 246, 0.5);
-    border-radius: 0.5rem;
+    border-radius: 8px;
     padding: 1rem;
-    margin-top: 1rem;
+    margin: 1rem 0;
+    border-left: 3px solid;
+    background: rgba(255, 255, 255, 0.9);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.section-restrictions {
+    border-color: var(--primary-color);
+    background: rgba(79, 70, 229, 0.05);
+}
+
+.activity-restrictions {
+    border-color: var(--secondary-color);
+    background: rgba(16, 185, 129, 0.05);
 }
 
 .restrictions-title {
@@ -116,22 +126,33 @@ body {
 }
 
 .restriction-item {
+    padding: 0.75rem;
+    margin: 0.5rem 0;
+    border-radius: 6px;
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.25rem 0;
-    font-size: 0.875rem;
+    transition: all 0.2s ease;
+    background: white;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
-.section-restrictions {
-    background-color: rgba(37, 99, 235, 0.05);
-    border-left: 3px solid var(--primary-color);
+.restriction-item:hover {
+    transform: translateX(5px);
+    box-shadow: 0 3px 6px rgba(0, 0, 0, 0.1);
 }
 
-.activity-restrictions {
-    background-color: rgba(5, 150, 105, 0.05);
-    border-left: 3px solid var(--success-color);
+.restriction-item i {
+    font-size: 1.2em;
+    min-width: 30px;
 }
+
+/* Tipos de restricciones */
+.text-primary { color: var(--primary-color) !important; }
+.text-success { color: var(--secondary-color) !important; }
+.text-info { color: var(--info-color) !important; }
+.text-warning { color: var(--warning-color) !important; }
+.text-danger { color: var(--danger-color) !important; }
+.text-secondary { color: #6b7280 !important; }
 
 /* BBB Actions */
 .bbb-actions {
@@ -147,7 +168,7 @@ body {
 
 .bbb-actions .btn:hover {
     transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
+    box-shadow: 0 4px 12px rgba(79, 70, 229, 0.2);
 }
 
 /* Badges */
@@ -159,16 +180,6 @@ body {
 
 .badge.bg-warning {
     color: #92400e;
-}
-
-/* Status Indicators */
-.status-hidden {
-    padding: 0.25rem 0.75rem;
-    border-radius: 0.375rem;
-    font-size: 0.875rem;
-    font-weight: 500;
-    background-color: rgba(217, 119, 6, 0.1);
-    color: var(--warning-color);
 }
 
 /* Animations */
@@ -223,26 +234,43 @@ body {
         --card-bg: #2d2d2d;
         --text-color: #e5e5e5;
         --border-color: #404040;
+        --primary-color: #6366f1; /* Ajuste para modo oscuro */
+        --secondary-color: #10b981;
+        --info-color: #3b82f6;
+        --warning-color: #f59e0b;
+        --danger-color: #ef4444;
     }
 
-    .section-card {
-        background-color: #2d2d2d;
+    body {
+        background-color: var(--bg-color);
+        color: var(--text-color);
     }
 
-    .section-card .card-header {
-        background: linear-gradient(to right, rgba(37, 99, 235, 0.2), transparent);
+    .navbar {
+        background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
     }
 
     .restrictions-container {
-        background-color: rgba(255, 255, 255, 0.05);
+        background: rgba(30, 30, 30, 0.9);
+    }
+    
+    .restriction-item {
+        background: rgba(50, 50, 50, 0.7);
+    }
+    
+    .section-restrictions {
+        background: rgba(79, 70, 229, 0.1);
+    }
+    
+    .activity-restrictions {
+        background: rgba(16, 185, 129, 0.1);
     }
 
     .badge.bg-warning {
         color: #fcd34d;
     }
 
-    .status-hidden {
-        background-color: rgba(217, 119, 6, 0.2);
-        color: #fbbf24;
+    .restriction-item.text-secondary {
+        color: #d1d5db !important; /* Gris claro en modo oscuro */
     }
 }
