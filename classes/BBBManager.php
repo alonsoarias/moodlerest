@@ -1,11 +1,17 @@
 <?php
 declare(strict_types=1);
 
+/**
+ * Clase BBBManager para gestionar las actividades BigBlueButton (BBB) en Moodle.
+ */
 class BBBManager {
     private ?string $error = null;
     private ?string $message = null;
     private ?int $courseId = null;
     private array $data = [];
+
+    // Cache para nombres de grupos
+    private array $groupCache = [];
 
     public function __construct(
         private readonly MoodleAPI $api
@@ -13,6 +19,11 @@ class BBBManager {
         $this->courseId = filter_var($_GET['course_id'] ?? null, FILTER_VALIDATE_INT) ?: null;
     }
 
+    /**
+     * Inicializa el gestor BBB.
+     *
+     * @return void
+     */
     public function initialize(): void {
         try {
             if (!$this->api->validateConnection()) {
@@ -26,138 +37,235 @@ class BBBManager {
         }
     }
 
+    /**
+     * Carga los datos necesarios según si se ha seleccionado un curso.
+     *
+     * @return void
+     */
     private function loadData(): void {
         if ($this->courseId) {
-            $this->data['courseInfo'] = $this->api->getCourseInfo($this->courseId);
-            $this->data['bbbData'] = $this->api->getBBBActivities($this->courseId);
+            try {
+                $this->data['courseInfo'] = $this->api->getCourseInfo($this->courseId);
+                $this->data['bbbData'] = $this->api->getBBBActivities($this->courseId);
+            } catch (Exception $e) {
+                $this->error = $e->getMessage();
+                error_log("BBBManager loadData Error: " . $e->getMessage());
+            }
         } else {
             $this->data['coursesWithBBB'] = $this->api->getCoursesWithBBB();
         }
     }
 
     /**
-     * Analiza y formatea las restricciones de acceso
+     * Analiza y formatea las restricciones de acceso.
+     *
+     * @param array|null $availability Datos de disponibilidad.
+     * @return array Restricciones formateadas.
      */
     public function getFormattedRestrictions(?array $availability): array {
-        if (empty($availability)) {
-            return [];
-        }
+        if (!$this->hasRestrictions($availability)) return [];
 
         $restrictions = [];
-        foreach ($availability['c'] ?? [] as $condition) {
-            $formatted = $this->formatRestriction($condition);
-            if ($formatted) {
-                $restrictions[] = $formatted;
-            }
+        foreach ($availability['c'] as $condition) {
+            $restriction = $this->formatRestriction($condition);
+            if ($restriction) $restrictions[] = $restriction;
         }
 
         return $restrictions;
     }
 
     /**
-     * Formatea un tipo específico de restricción
+     * Formatea una restricción según su tipo.
+     *
+     * @param array $condition Condición de restricción.
+     * @return array|null Restricción formateada o null si no es válida.
      */
     private function formatRestriction(array $condition): ?array {
-        if (!isset($condition['type'])) {
-            return null;
-        }
+        $type = $condition['type'] ?? 'unknown';
+        $method = 'format' . ucfirst($type) . 'Restriction';
 
-        $result = [
-            'type' => $condition['type'],
-            'icon' => $this->getRestrictionIcon($condition['type']),
-            'text' => '',
-            'class' => $this->getRestrictionClass($condition['type'])
+        return method_exists($this, $method)
+            ? $this->$method($condition)
+            : $this->formatUnknownRestriction($condition);
+    }
+
+    /**
+     * Formatea una restricción de tipo 'date'.
+     *
+     * @param array $condition Condición de restricción.
+     * @return array Restricción formateada.
+     */
+    private function formatDateRestriction(array $condition): array {
+        $timestamp = isset($condition['t']) ? (int)$condition['t'] : 0;
+        $date = $timestamp ? date('d/m/Y H:i', $timestamp) : 'Fecha desconocida';
+        $operator = $condition['d'] ?? '>=';
+
+        // Determinar si es 'desde' o 'hasta'
+        $text = match ($operator) {
+            '>=' => 'Disponible desde: ',
+            '<=' => 'Disponible hasta: ',
+            default => 'Disponible en: '
+        };
+
+        return [
+            'type' => 'date',
+            'icon' => 'bi-calendar-event',
+            'class' => 'text-primary',
+            'text' => $text . $date
         ];
-
-        switch ($condition['type']) {
-            case 'date':
-                if (isset($condition['d'], $condition['t'])) {
-                    $date = date('Y-m-d H:i', (int)$condition['t']);
-                    $result['text'] = $condition['d'] === '>=' ? 
-                        "Disponible desde: $date" : 
-                        "Disponible hasta: $date";
-                }
-                break;
-
-            case 'group':
-                $result['text'] = isset($condition['id']) ? 
-                    "Restringido al grupo: {$condition['id']}" : '';
-                break;
-
-            case 'profile':
-                if (isset($condition['sf'], $condition['v'])) {
-                    $result['text'] = "Campo de perfil '{$condition['sf']}' debe ser: {$condition['v']}";
-                }
-                break;
-
-            case 'completion':
-                if (isset($condition['cm'])) {
-                    $estado = ($condition['e'] ?? 1) == 1 ? 'completada' : 'no completada';
-                    $result['text'] = "Requiere actividad {$condition['cm']} $estado";
-                }
-                break;
-
-            case 'grade':
-                if (isset($condition['id'], $condition['min'])) {
-                    $result['text'] = "Calificación mínima: {$condition['min']}";
-                }
-                break;
-
-            default:
-                return null;
-        }
-
-        return $result['text'] ? $result : null;
     }
 
     /**
-     * Obtiene el icono correspondiente al tipo de restricción
+     * Formatea una restricción de tipo 'group'.
+     *
+     * @param array $condition Condición de restricción.
+     * @return array Restricción formateada.
      */
-    private function getRestrictionIcon(string $type): string {
-        return match($type) {
-            'date' => 'bi-calendar-event',
-            'group' => 'bi-people-fill',
-            'profile' => 'bi-person-vcard',
-            'completion' => 'bi-check-circle',
-            'grade' => 'bi-star-fill',
-            default => 'bi-shield-lock'
-        };
+    private function formatGroupRestriction(array $condition): array {
+        $groupId = $condition['id'] ?? 0;
+        $groupName = $this->getGroupName((int)$groupId) ?? "Grupo #{$groupId}";
+        return [
+            'type' => 'group',
+            'icon' => 'bi-people-fill',
+            'class' => 'text-success',
+            'text' => 'Grupo requerido: ' . htmlspecialchars($groupName)
+        ];
     }
 
     /**
-     * Obtiene la clase CSS correspondiente al tipo de restricción
+     * Formatea una restricción de tipo 'profile'.
+     *
+     * @param array $condition Condición de restricción.
+     * @return array Restricción formateada.
      */
-    private function getRestrictionClass(string $type): string {
-        return match($type) {
-            'date' => 'text-primary',
-            'group' => 'text-success',
-            'profile' => 'text-info',
-            'completion' => 'text-warning',
-            'grade' => 'text-danger',
-            default => 'text-secondary'
-        };
+    private function formatProfileRestriction(array $condition): array {
+        $field = htmlspecialchars($condition['sf'] ?? 'Campo desconocido');
+        $value = htmlspecialchars($condition['v'] ?? 'Valor desconocido');
+        return [
+            'type' => 'profile',
+            'icon' => 'bi-person-badge',
+            'class' => 'text-info',
+            'text' => "Campo '{$field}': {$value}"
+        ];
     }
 
     /**
-     * Verifica si una sección o actividad tiene restricciones
+     * Formatea una restricción de tipo 'completion'.
+     *
+     * @param array $condition Condición de restricción.
+     * @return array Restricción formateada.
+     */
+    private function formatCompletionRestriction(array $condition): array {
+        $activityId = $condition['cm'] ?? 'Desconocido';
+        $status = (isset($condition['e']) && $condition['e'] == 1) ? 'completada' : 'no completada';
+        return [
+            'type' => 'completion',
+            'icon' => 'bi-check-circle',
+            'class' => 'text-warning',
+            'text' => "Requiere actividad '{$activityId}' {$status}"
+        ];
+    }
+
+    /**
+     * Formatea una restricción de tipo 'grade'.
+     *
+     * @param array $condition Condición de restricción.
+     * @return array Restricción formateada.
+     */
+    private function formatGradeRestriction(array $condition): array {
+        $minGrade = htmlspecialchars($condition['min'] ?? '0');
+        return [
+            'type' => 'grade',
+            'icon' => 'bi-award',
+            'class' => 'text-danger',
+            'text' => "Calificación mínima: {$minGrade}%"
+        ];
+    }
+
+    /**
+     * Formatea una restricción desconocida.
+     *
+     * @param array $condition Condición de restricción.
+     * @return array Restricción formateada.
+     */
+    private function formatUnknownRestriction(array $condition): array {
+        return [
+            'type' => 'unknown',
+            'icon' => 'bi-question-circle',
+            'class' => 'text-secondary',
+            'text' => 'Restricción no reconocida: ' . json_encode($condition)
+        ];
+    }
+
+    /**
+     * Verifica si una sección o actividad tiene restricciones.
+     *
+     * @param array|null $availability Datos de disponibilidad.
+     * @return bool True si hay restricciones, false de lo contrario.
      */
     public function hasRestrictions(?array $availability): bool {
-        return !empty($availability['c'] ?? []);
+        if (empty($availability['c'])) return false;
+        foreach ($availability['c'] as $condition) {
+            if (!empty($condition['type'])) return true;
+        }
+        return false;
     }
 
+    /**
+     * Obtiene el nombre de un grupo con cache.
+     *
+     * @param int $groupId ID del grupo.
+     * @return string|null Nombre del grupo o null si no se encuentra.
+     */
+    private function getGroupName(int $groupId): ?string {
+        if (isset($this->groupCache[$groupId])) {
+            return $this->groupCache[$groupId];
+        }
+
+        try {
+            $groupName = $this->api->getGroupById($groupId);
+            $this->groupCache[$groupId] = $groupName;
+            return $groupName;
+        } catch (Exception $e) {
+            error_log("Error obteniendo nombre del grupo {$groupId}: " . $e->getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Obtiene los datos necesarios para la presentación.
+     *
+     * @return array Datos del gestor.
+     */
     public function getData(): array {
         return $this->data;
     }
 
+    /**
+     * Obtiene el ID del curso actual.
+     *
+     * @return int|null ID del curso o null si no está seleccionado.
+     */
     public function getCourseId(): ?int {
         return $this->courseId;
     }
 
+    /**
+     * Obtiene el mensaje de error.
+     *
+     * @return string|null Mensaje de error o null si no hay.
+     */
     public function getError(): ?string {
         return $this->error;
     }
 
+    /**
+     * Obtiene el mensaje de éxito.
+     *
+     * @return string|null Mensaje de éxito o null si no hay.
+     */
     public function getMessage(): ?string {
         return $this->message;
     }
 }
+?>
